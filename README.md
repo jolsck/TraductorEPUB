@@ -2,7 +2,7 @@
 
 > Traducción de nivel profesional directamente en el navegador. Sin instalaciones, sin servidores, 100% gratis.
 
-**[Live Demo →](https://jolsck.github.io/TraductorEPUB)**
+
 
 ![Preview de la aplicación](assets/preview.png)
 
