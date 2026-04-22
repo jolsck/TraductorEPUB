@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TranslateLit — Traductor de EPUB & SRT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    /* Paleta Modo Claro (Light Mode) */
+    --bg-page: transparent; 
+    --bg-card: #ffffff;
+    --bg-hover: #f4f4f5;
+    --bg-input: #fafafa;
+    
+    --border: #e4e4e7;
+    --border-hover: #d4d4d8;
+    
+    --text-primary: #09090b;
+    --text-secondary: #52525b;
+    --text-tertiary: #a1a1aa;
+    
+    --accent: #000000;
+    --accent-hover: #27272a;
+    --accent-text: #ffffff;
+    
+    --ok: #10b981;
+    --warn: #f59e0b;
+    --err: #ef4444;
+
+    --overlay-bg: rgba(255, 255, 255, 0.65);
+    --nav-bg: rgba(255, 255, 255, 0.4);
+    --badge-bg: #ffffff;
+  }
+
+  /* Paleta Modo Oscuro (Dark Mode) */
+  [data-theme="dark"] {
+    --bg-card: #09090b;
+    --bg-hover: #18181b;
+    --bg-input: #000000;
+    
+    --border: #27272a;
+    --border-hover: #3f3f46;
+    
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-tertiary: #71717a;
+    
+    --accent: #ffffff;
+    --accent-hover: #e4e4e7;
+    --accent-text: #000000;
+
+    --overlay-bg: rgba(0, 0, 0, 0.75);
+    --nav-bg: rgba(0, 0, 0, 0.5);
+    --badge-bg: #000000;
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+    transition: color 0.3s ease;
+  }
+
+  /* --- VIDEO BACKGROUND --- */
+  .video-bg-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -2;
+    overflow: hidden;
+    background-color: #f0f0f0; 
+  }
+  #bg-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  /* Efecto de cristal esmerilado que cambia con el tema */
+  .video-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: -1;
+    background: var(--overlay-bg); 
+    backdrop-filter: blur(12px); 
+    pointer-events: none;
+    transition: background 0.3s ease;
+  }
+
+  /* --- NAV --- */
+  nav {
+    position: relative;
+    z-index: 10;
+    padding: 1rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    background: var(--nav-bg);
+    backdrop-filter: blur(10px);
+    transition: background 0.3s ease, border-color 0.3s ease;
+  }
+  .brand {
+    font-size: 1.1rem;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+  }
+  .brand span { font-weight: 400; color: var(--text-secondary); }
+  .badge {
+    background: var(--badge-bg);
+    color: var(--text-primary);
+    padding: 0.2rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  }
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+  }
+  .nav-links {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  /* Theme Toggle Button */
+  .theme-toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--bg-card);
+  }
+  .theme-toggle:hover {
+    transform: scale(1.05);
+    border-color: var(--text-primary);
+  }
+  .theme-toggle .moon-icon { display: block; }
+  .theme-toggle .sun-icon { display: none; }
+  [data-theme="dark"] .theme-toggle .moon-icon { display: none; }
+  [data-theme="dark"] .theme-toggle .sun-icon { display: block; }
+
+  /* --- HERO --- */
+  .hero {
+    position: relative;
+    z-index: 10;
+    text-align: center;
+    padding: 5rem 1rem 3.5rem;
+  }
+  .hero h1 {
+    font-size: clamp(2.2rem, 5vw, 3.8rem);
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    margin-bottom: 1.2rem;
+    line-height: 1.05;
+    color: var(--text-primary);
+  }
+  .hero p {
+    font-size: 1.1rem;
+    color: var(--text-secondary);
+    max-width: 600px;
+    margin: 0 auto;
+    line-height: 1.6;
+    font-weight: 500;
+  }
+
+  /* --- MAIN TRANSLATION CARD --- */
+  main {
+    position: relative;
+    z-index: 10;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0 1.5rem 4rem;
+  }
+
+  .translator-card, .output-area {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 850px;
+    box-shadow: 0 25px 50px -12px rgba(0,0,0,0.15);
+    overflow: hidden;
+    transition: background 0.3s, border-color 0.3s;
+  }
+
+  /* Top Bar: Languages */
+  .lang-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-input);
+    padding: 0.5rem 1rem;
+    transition: background 0.3s, border-color 0.3s;
+  }
+  .lang-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 0.75rem 1rem;
+  }
+  .lang-col label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-tertiary);
+    margin-bottom: 0.4rem;
+    font-weight: 600;
+  }
+  select {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-family: 'Inter', sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    outline: none;
+    cursor: pointer;
+    width: 100%;
+    appearance: none;
+  }
+  select option { background: var(--bg-card); color: var(--text-primary); }
+  
+  .swap-btn {
+    flex: 0 0 auto;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.25s ease;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  }
+  .swap-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--text-primary);
+    transform: rotate(180deg);
+  }
+
+  /* Middle Bar: Advanced Settings */
+  .advanced-controls {
+    display: flex;
+    gap: 1.5rem;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+  .setting-item {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .setting-item label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .setting-input {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.4rem 0.5rem;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    width: 100%;
+    font-weight: 400;
+  }
+  .setting-input:focus { border-color: var(--text-tertiary); }
+
+  /* Dropzone */
+  .dropzone {
+    padding: 3.5rem 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .dropzone:hover, .dropzone.dragover { background: var(--bg-input); }
+  .dropzone input[type="file"] { display: none; }
+  
+  .dz-icon {
+    width: 44px; height: 44px;
+    color: var(--text-tertiary);
+    margin: 0 auto 1.2rem;
+    transition: color 0.2s, transform 0.2s;
+  }
+  .dropzone:hover .dz-icon { color: var(--text-primary); transform: translateY(-3px); }
+  .dz-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+  }
+  .dz-sub {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+  }
+  .file-chip {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    font-weight: 500;
+    margin-top: 1.5rem;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+  }
+
+  /* Translate Button */
+  .btn-translate, .btn-download {
+    width: 100%;
+    padding: 1.25rem;
+    background: var(--accent);
+    color: var(--accent-text);
+    border: none;
+    font-size: 1.05rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s, color 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  .btn-translate:hover:not(:disabled), .btn-download:hover { background: var(--accent-hover); }
+  .btn-translate:active:not(:disabled), .btn-download:active { transform: scale(0.99); }
+  .btn-translate:disabled {
+    background: var(--border-hover);
+    color: var(--text-tertiary);
+    cursor: not-allowed;
+  }
+
+  .btn-download { border-radius: 8px; padding: 0.8rem 1.8rem; display: inline-flex; width: auto; }
+
+  /* --- OUTPUT AREA --- */
+  .output-area { display: none; margin-top: 2rem; }
+  .output-area.visible { display: block; }
+
+  .progress-bar { padding: 1.5rem; border-bottom: 1px solid var(--border); }
+  .prog-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1rem; }
+  .prog-pct { font-size: 1.5rem; font-weight: 800; color: var(--text-primary); letter-spacing: -0.02em; }
+  .prog-msg { font-size: 0.85rem; color: var(--text-secondary); font-weight: 500; }
+  .prog-track { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; }
+  .prog-fill { height: 100%; background: var(--text-primary); width: 0%; transition: width 0.3s ease; }
+
+  .tabs { display: flex; background: var(--bg-input); border-bottom: 1px solid var(--border); }
+  .tab-btn {
+    flex: 1; padding: 0.85rem; background: none; border: none;
+    font-size: 0.8rem; font-weight: 600; color: var(--text-secondary);
+    cursor: pointer; transition: color 0.2s;
+  }
+  .tab-btn:hover { color: var(--text-primary); }
+  .tab-btn.active { color: var(--text-primary); box-shadow: inset 0 -2px 0 var(--accent); background: var(--bg-card); }
+
+  .tab-content { padding: 1.5rem; max-height: 400px; overflow-y: auto; }
+  .tab-content::-webkit-scrollbar { width: 6px; }
+  .tab-content::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 6px; }
+
+  .segment-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;
+    padding: 1rem 0; border-bottom: 1px solid var(--border);
+    font-size: 0.85rem; line-height: 1.6;
+  }
+  .segment-row:last-child { border-bottom: none; }
+  .seg-orig { color: var(--text-secondary); }
+  .seg-trans { color: var(--text-primary); font-weight: 500; }
+  
+  .code-view { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text-secondary); white-space: pre-wrap; }
+  .log-view { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text-tertiary); line-height: 1.8; }
+  .log-line.ok { color: var(--ok); } .log-line.warn { color: var(--warn); } .log-line.err { color: var(--err); }
+
+  .download-section { padding: 1.5rem; background: var(--bg-input); text-align: center; border-top: 1px solid var(--border); display: none; }
+  .download-section.visible { display: block; }
+
+  .error-box { background: rgba(239, 68, 68, 0.05); border: 1px solid rgba(239, 68, 68, 0.2); color: var(--err); padding: 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.85rem; display: none; }
+  .error-box.visible { display: block; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { width: 16px; height: 16px; border: 2px solid rgba(128,128,128,0.3); border-top-color: currentColor; border-radius: 50%; animation: spin 0.6s linear infinite; }
+
+  /* --- RESPONSIVE --- */
+  @media (max-width: 768px) {
+    nav { padding: 1rem 1.5rem; }
+    .hero { padding: 3rem 1rem 2rem; }
+    .nav-links { display: none; }
+    .lang-controls { flex-direction: column; gap: 0.5rem; }
+    .swap-btn { transform: rotate(90deg); margin: 0; }
+    .swap-btn:hover { transform: rotate(270deg); }
+    .advanced-controls { flex-direction: column; gap: 1rem; }
+    .segment-row { grid-template-columns: 1fr; gap: 0.5rem; }
+    .tabs { flex-wrap: wrap; }
+    .tab-btn { padding: 0.6rem; font-size: 0.75rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="video-bg-container">
+  <video id="bg-video" autoplay loop muted playsinline></video>
+</div>
+<div class="video-overlay"></div>
+
+<nav>
+  <div class="brand">Translate<span>Lit</span> <div class="badge">PRO</div></div>
+  <div class="nav-right">
+    <div class="nav-links">Herramienta Gratuita de Traducción</div>
+    
+    <button class="theme-toggle" id="themeToggle" title="Cambiar Tema">
+      <svg class="moon-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+      </svg>
+      <svg class="sun-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="5"></circle>
+        <line x1="12" y1="1" x2="12" y2="3"></line>
+        <line x1="12" y1="21" x2="12" y2="23"></line>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+        <line x1="1" y1="12" x2="3" y2="12"></line>
+        <line x1="21" y1="12" x2="23" y2="12"></line>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+      </svg>
+    </button>
+  </div>
+</nav>
+
+<div class="hero">
+  <h1>Traduce EPUBs.<br>Online y Gratis.</h1>
+  <p>Traducción de nivel profesional preservando el formato original, la estructura y los estilos. Ahora con soporte para la API de Google.</p>
+</div>
+
+<main>
+  <div class="translator-card">
+    
+    <div class="lang-controls">
+      <div class="lang-col">
+        <label>Idioma Origen</label>
+        <select id="srcLang">
+          <option value="auto">Detectar automáticamente</option>
+          <option value="en">Inglés</option>
+          <option value="es">Español</option>
+          <option value="fr">Francés</option>
+          <option value="de">Alemán</option>
+          <option value="it">Italiano</option>
+          <option value="pt">Portugués</option>
+          <option value="ru">Ruso</option>
+          <option value="zh-CN">Chino (Simplificado)</option>
+          <option value="ja">Japonés</option>
+        </select>
+      </div>
+      
+      <button class="swap-btn" onclick="swapLanguages()" title="Invertir idiomas">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20L9 20 9 15M21 3l-7 7M3 21l7-7"/></svg>
+      </button>
+
+      <div class="lang-col">
+        <label>Idioma Destino</label>
+        <select id="tgtLang">
+          <option value="es" selected>Español</option>
+          <option value="en">Inglés</option>
+          <option value="fr">Francés</option>
+          <option value="de">Alemán</option>
+          <option value="it">Italiano</option>
+          <option value="pt">Portugués</option>
+          <option value="ru">Ruso</option>
+          <option value="zh-CN">Chino (Simplificado)</option>
+          <option value="ja">Japonés</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="advanced-controls">
+      <div class="setting-item">
+        <label>Motor:</label>
+        <select id="engine" class="setting-input">
+          <option value="google">Google Translate (Recomendado)</option>
+          <option value="mymemory">MyMemory</option>
+          <option value="lingva">Lingva</option>
+        </select>
+      </div>
+      <div class="setting-item">
+        <label>Retardo (ms):</label>
+        <input type="number" id="delay" value="400" min="100" max="5000" class="setting-input" title="Tiempo entre peticiones para evitar bloqueos" />
+      </div>
+    </div>
+
+    <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+      <input type="file" id="fileInput" accept=".epub,.srt,.txt" />
+      <svg class="dz-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <div class="dz-title">Sube tu archivo o arrástralo aquí</div>
+      <div class="dz-sub">Formatos soportados: EPUB, SRT, TXT</div>
+      <div id="fileBadge" style="display:none">
+        <span class="file-chip" id="fileNameDisplay"></span>
+      </div>
+    </div>
+
+    <button class="btn-translate" id="btnTranslate" disabled>
+      Iniciar Traducción
+    </button>
+  </div>
+
+  <div class="output-area" id="outputArea">
+    <div class="error-box" id="errorMsg"></div>
+
+    <div class="progress-bar">
+      <div class="prog-header">
+        <span class="prog-msg" id="progressMsg">Iniciando motor de traducción...</span>
+        <span class="prog-pct" id="progressPct">0%</span>
+      </div>
+      <div class="prog-track">
+        <div class="prog-fill" id="progressFill"></div>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('tabSegments', this)">Vista Paralela</button>
+      <button class="tab-btn" onclick="switchTab('tabRaw', this)">Código Crudo</button>
+      <button class="tab-btn" onclick="switchTab('tabLog', this)">Logs</button>
+    </div>
+
+    <div id="tabSegments" class="tab-content" style="display:block;">
+      <div id="segmentsContainer"></div>
+    </div>
+    <div id="tabRaw" class="tab-content code-view" style="display:none;"></div>
+    <div id="tabLog" class="tab-content log-view" style="display:none;"></div>
+
+    <div class="download-section" id="downloadBlock">
+      <button class="btn-download" id="btnDownload">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Descargar Archivo Traducido
+      </button>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ═══════════════════════════════════════════
+// TEMA CLARO / OSCURO
+// ═══════════════════════════════════════════
+const themeToggleBtn = document.getElementById('themeToggle');
+const currentTheme = localStorage.getItem('theme');
+
+// Si el usuario ya tenía guardado el tema oscuro, aplicarlo
+if (currentTheme === 'dark') {
+  document.documentElement.setAttribute('data-theme', 'dark');
+}
+
+themeToggleBtn.addEventListener('click', () => {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  if (isDark) {
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem('theme', 'light');
+  } else {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    localStorage.setItem('theme', 'dark');
+  }
+});
+
+// ═══════════════════════════════════════════
+// INICIALIZACIÓN DEL VIDEO DE FONDO (HLS.js)
+// ═══════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  const video = document.getElementById('bg-video');
+  const videoSrc = 'https://stream.mux.com/E3rAKyTB54G02a702jKVDAsRnWoRXwUss6mjjctaODp8w.m3u8';
+  
+  if (Hls.isSupported()) {
+    const hls = new Hls();
+    hls.loadSource(videoSrc);
+    hls.attachMedia(video);
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    // Para navegadores como Safari que soportan HLS nativo
+    video.src = videoSrc;
+  }
+});
+
+// ═══════════════════════════════════════════
+// FUNCIÓN PARA EL BOTÓN DE INVERTIR IDIOMAS
+// ═══════════════════════════════════════════
+function swapLanguages() {
+  const srcSelect = document.getElementById('srcLang');
+  const tgtSelect = document.getElementById('tgtLang');
+  
+  if(srcSelect.value !== 'auto') {
+    const tempValue = srcSelect.value;
+    srcSelect.value = tgtSelect.value;
+    tgtSelect.value = tempValue;
+  }
+}
+
+// ═══════════════════════════════════════════
+// CONSTANTS & STATE
+// ═══════════════════════════════════════════
+const SEP = '―――';
+let loadedFile = null;
+let translatedBlob = null;
+let previewSegments = [];
+
+function getCharLimit(engine) {
+  if (engine === 'google') return 1200; 
+  return 400; 
+}
+
+// ═══════════════════════════════════════════
+// FILE HANDLING
+// ═══════════════════════════════════════════
+const dropzoneEl = document.getElementById('dropzone');
+const fileInput  = document.getElementById('fileInput');
+
+dropzoneEl.addEventListener('dragover',  e => { e.preventDefault(); dropzoneEl.classList.add('dragover'); });
+dropzoneEl.addEventListener('dragleave', () => dropzoneEl.classList.remove('dragover'));
+dropzoneEl.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzoneEl.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(f) {
+  const ext = f.name.split('.').pop().toLowerCase();
+  if (!['epub','srt','txt'].includes(ext)) {
+    showError('Formato no soportado. Usa EPUB, SRT o TXT.');
+    return;
+  }
+  loadedFile = f;
+  document.getElementById('fileNameDisplay').textContent = f.name;
+  document.getElementById('fileBadge').style.display = 'block';
+  document.getElementById('btnTranslate').disabled = false;
+  hideError();
+  log(`Archivo cargado: ${f.name}`, 'ok');
+}
+
+// ═══════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function log(msg, type = 'info') {
+  const now = new Date().toLocaleTimeString('es', {hour12:false});
+  const area = document.getElementById('tabLog');
+  const span = document.createElement('div');
+  span.className = `log-line ${type}`;
+  span.textContent = `[${now}] ${msg}`;
+  area.appendChild(span);
+  area.scrollTop = area.scrollHeight;
+}
+
+function splitTextSafely(text, maxLen) {
+  if (text.length <= maxLen) return [text];
+  const chunks = [];
+  const sentences = text.match(/[^.!?。！？\n]+[.!?。！？\n]?\s*/g) || [text];
+  let cur = '';
+  for (const s of sentences) {
+    if (s.length > maxLen) {
+      if (cur) { chunks.push(cur.trim()); cur = ''; }
+      const words = s.split(' ');
+      let wchunk = '';
+      for (const w of words) {
+        if ((wchunk + w).length > maxLen && wchunk) {
+          chunks.push(wchunk.trim()); wchunk = w + ' ';
+        } else { wchunk += w + ' '; }
+      }
+      if (wchunk.trim()) chunks.push(wchunk.trim());
+    } else if ((cur + s).length > maxLen && cur) {
+      chunks.push(cur.trim()); cur = s;
+    } else { cur += s; }
+  }
+  if (cur.trim()) chunks.push(cur.trim());
+  return chunks.filter(c => c.length > 0);
+}
+
+// ═══════════════════════════════════════════
+// TRANSLATION ENGINES
+// ═══════════════════════════════════════════
+async function translateGoogleRaw(text, src, tgt) {
+  const s = src === 'auto' ? 'auto' : src;
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${s}&tl=${tgt}&dt=t&q=${encodeURIComponent(text)}`;
+  
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  
+  let translatedText = '';
+  if (data && data[0]) {
+    data[0].forEach(item => { if (item[0]) translatedText += item[0]; });
+    return translatedText;
+  }
+  throw new Error('Sin respuesta de Google');
+}
+
+async function translateMyMemoryRaw(text, src, tgt) {
+  const langPair = (src === 'auto' ? 'en' : src) + '|' + tgt;
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${langPair}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.responseStatus === 200 && data.responseData?.translatedText) {
+    return data.responseData.translatedText;
+  }
+  throw new Error(data.responseMessage || `HTTP ${res.status}`);
+}
+
+async function translateLingva(text, src, tgt) {
+  const s = src === 'auto' ? 'en' : src;
+  const url = `https://lingva.ml/api/v1/${s}/${tgt}/${encodeURIComponent(text)}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.translation) return data.translation;
+  throw new Error('Sin traducción');
+}
+
+async function translateChunk(text, src, tgt, engine) {
+  if (engine === 'google')   return translateGoogleRaw(text, src, tgt);
+  if (engine === 'lingva')   return translateLingva(text, src, tgt);
+  return translateMyMemoryRaw(text, src, tgt);
+}
+
+async function translateText(text, src, tgt, engine) {
+  if (!text || !text.trim()) return text;
+  
+  const limit = getCharLimit(engine);
+  if (text.length <= limit) {
+    return translateChunk(text, src, tgt, engine);
+  }
+
+  const pieces = splitTextSafely(text, limit);
+  const results = [];
+  for (let i = 0; i < pieces.length; i++) {
+    if (i > 0) await sleep(250);
+    results.push(await translateChunk(pieces[i].trim(), src, tgt, engine));
+  }
+  return results.join(' ');
+}
+
+async function translateWithRetry(text, src, tgt, engine, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await translateText(text, src, tgt, engine);
+    } catch (e) {
+      if (i < retries - 1) await sleep(900 * (i + 1));
+      else throw e;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════
+// PARSERS
+// ═══════════════════════════════════════════
+function parseSRT(content) {
+  return content.trim().split(/\n\s*\n/).map(block => {
+    const lines = block.trim().split('\n');
+    return { num: lines[0], time: lines[1] || '', text: lines.slice(2).join('\n') };
+  }).filter(b => b.text.trim());
+}
+
+function assembleSRT(segs) {
+  return segs.map(s => `${s.num}\n${s.time}\n${s.translatedText || s.text}`).join('\n\n');
+}
+
+async function getEPUBSpineOrder(zip) {
+  try {
+    const containerFile = zip.file('META-INF/container.xml');
+    if (!containerFile) return null;
+    const containerXml = await containerFile.async('string');
+    const match = containerXml.match(/full-path="([^"]+\.opf)"/i);
+    if (!match) return null;
+    const opfPath = match[1];
+    const opfContent = await zip.file(opfPath).async('string');
+    const opfDir = opfPath.includes('/') ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1) : '';
+
+    const manifest = {};
+    const mRx = /<item\b[^>]*\bid="([^"]+)"[^>]*\bhref="([^"]+)"[^>]*>/gi;
+    let m;
+    while ((m = mRx.exec(opfContent)) !== null) manifest[m[1]] = opfDir + decodeURIComponent(m[2]);
+
+    const spine = [];
+    const sRx = /<itemref\b[^>]*\bidref="([^"]+)"/gi;
+    while ((m = sRx.exec(opfContent)) !== null) if (manifest[m[1]]) spine.push(manifest[m[1]]);
+    
+    return spine.length > 0 ? spine : null;
+  } catch { return null; }
+}
+
+async function extractEPUBTexts(arrayBuffer) {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const spineOrder = await getEPUBSpineOrder(zip);
+
+  const htmlFiles = [];
+  zip.forEach((path, file) => {
+    if (/\.(html|htm|xhtml)$/i.test(path) && !file.dir) htmlFiles.push({ path, file });
+  });
+
+  if (spineOrder) {
+    const orderMap = new Map(spineOrder.map((p, i) => [p, i]));
+    htmlFiles.sort((a, b) => {
+      const ai = orderMap.has(a.path) ? orderMap.get(a.path) : 9999;
+      const bi = orderMap.has(b.path) ? orderMap.get(b.path) : 9999;
+      return ai - bi;
+    });
+  }
+
+  const items = [];
+  for (const { path, file } of htmlFiles) {
+    items.push({ path, content: await file.async('string') });
+  }
+  return { zip, items };
+}
+
+function extractTextNodes(html) {
+  const segs = [];
+  const regex = />([^<]+)</g;
+  let match, idx = 0;
+  while ((match = regex.exec(html)) !== null) {
+    const text = match[1].trim();
+    if (text.length > 1 && !/^[\s\d\W]+$/.test(text)) {
+      segs.push({ index: idx++, start: match.index + 1, end: match.index + 1 + match[1].length, original: match[1], text });
+    }
+  }
+  return segs;
+}
+
+function replaceTextInHTML(html, segments, translations) {
+  const sorted = [...segments].sort((a, b) => b.start - a.start);
+  let result = html;
+  for (const seg of sorted) {
+    if (translations[seg.index]) {
+      result = result.slice(0, seg.start) + seg.original.replace(seg.text, translations[seg.index]) + result.slice(seg.end);
+    }
+  }
+  return result;
+}
+
+// ═══════════════════════════════════════════
+// MAIN ORCHESTRATOR
+// ═══════════════════════════════════════════
+async function startTranslation() {
+  if (!loadedFile) return;
+
+  const src = document.getElementById('srcLang').value;
+  const tgt = document.getElementById('tgtLang').value;
+  const engine = document.getElementById('engine').value;
+  const delay = parseInt(document.getElementById('delay').value) || 500;
+  const ext = loadedFile.name.split('.').pop().toLowerCase();
+
+  document.getElementById('btnTranslate').disabled = true;
+  document.getElementById('btnTranslate').innerHTML = '<span class="spinner"></span> Procesando...';
+  
+  document.getElementById('outputArea').classList.add('visible');
+  document.getElementById('downloadBlock').classList.remove('visible');
+  document.getElementById('segmentsContainer').innerHTML = '';
+  document.getElementById('tabRaw').textContent = '';
+  hideError();
+  previewSegments = [];
+
+  setProgress(0, 'Leyendo archivo...');
+  log(`Iniciando con motor: ${engine.toUpperCase()}`);
+
+  try {
+    if (ext === 'srt')       await translateSRT(src, tgt, engine, delay);
+    else if (ext === 'epub') await translateEPUB(src, tgt, engine, delay);
+    else                     await translateTXT(src, tgt, engine, delay);
+  } catch (e) {
+    showError(e.message);
+    log(`Error fatal: ${e.message}`, 'err');
+  } finally {
+    document.getElementById('btnTranslate').disabled = false;
+    document.getElementById('btnTranslate').innerHTML = 'Iniciar Traducción';
+  }
+}
+
+// --- Specific Processors ---
+async function translateTXT(src, tgt, engine, delay) {
+  const text = await loadedFile.text();
+  const limit = getCharLimit(engine);
+  const chunks = splitTextSafely(text, limit);
+  const translated = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    try {
+      const result = await translateWithRetry(chunks[i], src, tgt, engine);
+      translated.push(result);
+      addSegmentPreview(chunks[i].substring(0,80), result.substring(0,80));
+    } catch (e) {
+      translated.push(chunks[i]);
+      log(`Fragmento ${i+1} falló`, 'warn');
+    }
+    setProgress(Math.round(((i+1)/chunks.length)*100), `Traduciendo ${i+1}/${chunks.length}`);
+    if (i < chunks.length - 1) await sleep(delay);
+  }
+
+  finalize(translated.join('\n\n'), 'txt');
+}
+
+async function translateSRT(src, tgt, engine, delay) {
+  const text = await loadedFile.text();
+  const segments = parseSRT(text);
+
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (seg.text.trim()) {
+      try {
+        seg.translatedText = await translateWithRetry(seg.text, src, tgt, engine);
+        addSegmentPreview(seg.text, seg.translatedText);
+      } catch (e) {
+        seg.translatedText = seg.text;
+      }
+    }
+    setProgress(Math.round(((i+1)/segments.length)*100), `Subtítulo ${i+1}/${segments.length}`);
+    if (i < segments.length - 1) await sleep(delay);
+  }
+
+  finalize(assembleSRT(segments), 'srt');
+}
+
+async function translateEPUB(src, tgt, engine, delay) {
+  const buffer = await loadedFile.arrayBuffer();
+  let zip, items;
+
+  try { ({ zip, items } = await extractEPUBTexts(buffer)); } 
+  catch (e) { throw new Error('No se pudo abrir el EPUB'); }
+
+  const itemSegments = items.map(item => extractTextNodes(item.content));
+  const totalSegs = itemSegments.reduce((acc, s) => acc + s.length, 0);
+  let doneSegs = 0;
+  const limit = getCharLimit(engine) * 0.8; 
+
+  for (let fi = 0; fi < items.length; fi++) {
+    const item = items[fi];
+    const segments = itemSegments[fi];
+    if (segments.length === 0) continue;
+
+    const translations = {};
+    const batches = [];
+    let curBatch = [], curLen = 0;
+
+    for (const seg of segments) {
+      const cost = seg.text.length + SEP.length;
+      if (curLen + cost > limit && curBatch.length > 0) {
+        batches.push(curBatch); curBatch = [seg]; curLen = cost;
+      } else {
+        curBatch.push(seg); curLen += cost;
+      }
+    }
+    if (curBatch.length) batches.push(curBatch);
+
+    for (const batch of batches) {
+      if (batch.length === 1) {
+        const seg = batch[0];
+        try {
+          translations[seg.index] = await translateWithRetry(seg.text, src, tgt, engine);
+          if(previewSegments.length < 50) addSegmentPreview(seg.text.substring(0,100), translations[seg.index].substring(0,100));
+        } catch { translations[seg.index] = seg.text; }
+      } else {
+        const combined = batch.map(s => s.text).join(`\n${SEP}\n`);
+        let ok = false;
+        try {
+          const result = await translateWithRetry(combined, src, tgt, engine);
+          const parts = result.split(new RegExp(`\\n?${SEP.replace(/[-]/g,'\\$&')}\\n?`));
+          if (parts.length === batch.length) {
+            batch.forEach((seg, i) => translations[seg.index] = parts[i].trim());
+            if(previewSegments.length < 50) addSegmentPreview(batch[0].text.substring(0,100), parts[0].substring(0,100));
+            ok = true;
+          }
+        } catch(e) {}
+        
+        if (!ok) {
+          for (const seg of batch) {
+            try { translations[seg.index] = await translateWithRetry(seg.text, src, tgt, engine); }
+            catch { translations[seg.index] = seg.text; }
+            await sleep(delay/2);
+          }
+        }
+      }
+      doneSegs += batch.length;
+      setProgress(Math.round((doneSegs/totalSegs)*100), `Procesando nodos: ${doneSegs}/${totalSegs}`);
+      await sleep(delay);
+    }
+    
+    zip.file(item.path, replaceTextInHTML(item.content, segments, translations));
+  }
+
+  const epubBlob = await zip.generateAsync({ type:'blob', mimeType:'application/epub+zip' });
+  translatedBlob = epubBlob;
+  document.getElementById('tabRaw').textContent = '[Archivo EPUB Binario - Descarga para verlo]';
+  showDownloadReady('epub');
+}
+
+// ═══════════════════════════════════════════
+// UI & FINALIZATION
+// ═══════════════════════════════════════════
+function finalize(content, ext) {
+  translatedBlob = new Blob([content], { type:'text/plain;charset=utf-8' });
+  document.getElementById('tabRaw').textContent = content.substring(0,5000);
+  showDownloadReady(ext);
+}
+
+function showDownloadReady(ext) {
+  setProgress(100, 'Traducción completada con éxito');
+  document.getElementById('downloadBlock').classList.add('visible');
+}
+
+document.getElementById('btnDownload').addEventListener('click', () => {
+  if (!translatedBlob) return;
+  const tgt = document.getElementById('tgtLang').value;
+  const baseName = loadedFile.name.replace(/\.[^.]+$/, '');
+  const url = URL.createObjectURL(translatedBlob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `${baseName}_${tgt}.${loadedFile.name.split('.').pop()}`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+});
+
+function setProgress(pct, msg) {
+  document.getElementById('progressPct').textContent = `${pct}%`;
+  document.getElementById('progressFill').style.width = `${pct}%`;
+  document.getElementById('progressMsg').textContent = msg;
+}
+
+function addSegmentPreview(orig, trans) {
+  previewSegments.push(1);
+  const container = document.getElementById('segmentsContainer');
+  const div = document.createElement('div');
+  div.className = 'segment-row';
+  div.innerHTML = `<div class="seg-orig">${escHtml(orig)}</div><div class="seg-trans">${escHtml(trans)}</div>`;
+  container.appendChild(div);
+}
+
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function switchTab(tabId, btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+  document.getElementById(tabId).style.display = 'block';
+}
+
+function showError(msg) {
+  const el = document.getElementById('errorMsg');
+  el.textContent = msg; el.classList.add('visible');
+}
+function hideError() { document.getElementById('errorMsg').classList.remove('visible'); }
+
+document.getElementById('btnTranslate').addEventListener('click', startTranslation);
+</script>
+</body>
+</html>
